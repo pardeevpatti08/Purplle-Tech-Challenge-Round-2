@@ -1,0 +1,95 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: storedb
+      POSTGRES_USER: apex
+      POSTGRES_PASSWORD: apex
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U apex -d storedb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://apex:apex@db:5432/storedb
+      REDIS_URL: redis://redis:6379/0
+      APP_ENV: docker
+    volumes:
+      # data/ is read-only: store_layout.json, pos CSV, video clips, layout images
+      - ./data:/app/data:ro
+      # output/ is shared with the pipeline (events.jsonl written by pipeline, read by API)
+      - ./output:/app/output:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  pipeline:
+    build:
+      context: .
+      dockerfile: Dockerfile.pipeline
+    environment:
+      API_URL: http://api:8000
+      # Paths inside the container (matched to volume mounts below)
+      CLIPS_DIR: data
+      LAYOUT_PATH: data/store_layout.json
+      POS_PATH: data/pos_transactions_normalized.csv
+      PIPELINE_OUTPUT: output/events.jsonl
+      MODEL_PATH: yolov8n.pt
+      # Tuning — override via .env without touching this file
+      FRAME_STRIDE: ${FRAME_STRIDE:-15}
+      REID_THRESHOLD: ${REID_THRESHOLD:-0.75}
+      CROSS_CAMERA_LINK_SECONDS: ${CROSS_CAMERA_LINK_SECONDS:-120}
+      MIN_ENTRY_TRACK_SECONDS: ${MIN_ENTRY_TRACK_SECONDS:-4}
+      ENTRY_DEDUPE_SECONDS: ${ENTRY_DEDUPE_SECONDS:-2.5}
+      PIPELINE_NO_YOLO: ${PIPELINE_NO_YOLO:-0}
+      # Optional: rename mismatched store IDs in raw POS CSV
+      # e.g. set to "OUTLET_A=ST1008,OUTLET_B=ST1076" in your .env
+      POS_STORE_ID_MAP: ${POS_STORE_ID_MAP:-}
+    volumes:
+      - ./data:/workspace/data:ro
+      - ./output:/workspace/output
+      - ./yolov8n.pt:/workspace/yolov8n.pt:ro
+    depends_on:
+      api:
+        condition: service_healthy
+
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      VITE_API_URL: http://localhost:8000
+    depends_on:
+      pipeline:
+        condition: service_completed_successfully
+
+volumes:
+  pg_data:

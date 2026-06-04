@@ -1,0 +1,11 @@
+.venv/
+dashboard/node_modules/
+dashboard/dist/
+output/
+data/store1/*.mp4
+data/store2/*.mp4
+data/**/*.mp4
+*.pyc
+__pycache__/
+.pytest_cache/
+.git/

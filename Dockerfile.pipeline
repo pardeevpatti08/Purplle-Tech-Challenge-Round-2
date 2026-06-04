@@ -1,0 +1,19 @@
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+WORKDIR /workspace
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libglib2.0-0 libgl1 && rm -rf /var/lib/apt/lists/*
+
+COPY requirements-pipeline.txt .
+RUN pip install --no-cache-dir -r requirements-pipeline.txt
+
+# Copy pipeline code and helper scripts
+COPY pipeline ./pipeline
+COPY scripts/run_pipeline.py ./scripts/run_pipeline.py
+COPY scripts/normalize_data.py ./scripts/normalize_data.py
+
+ENTRYPOINT ["python", "scripts/run_pipeline.py"]

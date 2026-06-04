@@ -1,0 +1,6 @@
+opencv-python-headless==4.10.0.84
+numpy==2.2.1
+pydantic==2.10.4
+shapely==2.0.6
+ultralytics==8.3.56
+lap==0.5.12
